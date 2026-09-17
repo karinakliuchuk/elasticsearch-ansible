@@ -6,10 +6,7 @@
     owner: root
     group: elasticsearch
     mode: "0750"
-
-# ===============================================
 # Генерація CA і сертифіката — тільки на першій ноді
-# ===============================================
 - block:
     - name: Generate CA (elastic-stack-ca.p12)
       command: >
@@ -73,9 +70,7 @@
         - elastic-certificates.p12
   when: inventory_hostname == groups['es_nodes'][0]
 
-# ===============================================
 # Роздача сертифікатів на інші ноди
-# ===============================================
 - name: Distribute certs to non-first nodes
   copy:
     src: "/tmp/es-certs/{{ item }}"

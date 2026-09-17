@@ -1,8 +1,8 @@
 # Elasticsearch Ansible Cluster
 
-Ansible-автоматизація для розгортання secure 3-node Elasticsearch 8.x кластера з TLS, автентифікацією та автоматичною генерацією сертифікатів.
+Ansible playbook for deploying a secure 3-node Elasticsearch 8.x cluster with TLS, authentication and automatic certificate generation.
 
-## Архітектура
+## Architecture
 
     +---------------------------------------------+
     |           Ansible Control Node              |
@@ -22,11 +22,11 @@ Ansible-автоматизація для розгортання secure 3-node E
               TLS transport (9300)
               HTTPS HTTP (9200)
 
-Кластер: junior-devops-cluster
-Версія: Elasticsearch 8.13.4
-Безпека: TLS на transport (нода-нода) і HTTP (клієнт-нода), Basic Auth
+- Cluster name: `junior-devops-cluster`
+- Version: Elasticsearch 8.13.4
+- Security: TLS on transport (node-to-node) and HTTP (client-to-node), Basic Auth
 
-## Структура проєкту
+## Project structure
 
     .
     ├── ansible.cfg
@@ -34,100 +34,88 @@ Ansible-автоматизація для розгортання secure 3-node E
     ├── site.yml
     ├── group_vars/
     │   └── all/
-    │       ├── vars.yml          # Загальні змінні
-    │       └── vault.yml         # Зашифровані паролі (ansible-vault)
+    │       ├── vars.yml
+    │       └── vault.yml
     ├── roles/
-    │   ├── common/               # Java 17, sysctl, ліміти, swap off
-    │   ├── elasticsearch/        # Встановлення ES, конфіг, JVM heap
-    │   ├── certificates/         # CA + node certs з SAN через certutil
-    │   └── security/             # Старт кластера, health check
+    │   ├── common/
+    │   ├── elasticsearch/
+    │   ├── certificates/
+    │   └── security/
     └── README.md
 
-## Ролі
+## Roles
 
-| Роль | Що робить |
-|------|-----------|
-| common | Java 17, vm.max_map_count=262144, ліміти nofile/memlock, swap off |
-| elasticsearch | Репозиторій Elastic, встановлення ES 8.13.4, шаблони elasticsearch.yml і jvm.options, enable service |
-| certificates | Генерація CA і сертифіката з SAN (DNS+IP) на першій ноді, fetch і distribute на решту |
-| security | Старт ES, очікування HTTP, перевірка _cluster/health |
+| Role | Responsibility |
+|------|----------------|
+| common | Java 17, `vm.max_map_count`, file limits, swap off |
+| elasticsearch | Elastic repo, install ES 8.13.4, config templates |
+| certificates | Generate CA and SAN certificate on first node, distribute to others |
+| security | Start cluster, wait for HTTP, verify cluster health |
 
-## Швидкий старт
+## Quick start
 
-### Передумови
+### Requirements
 
-- Linux/macOS або WSL2 на Windows
+- Linux/macOS or WSL2 on Windows
 - Ansible >= 2.15
-- Docker (для тестового середовища) або 3 VM з SSH
+- Docker (for test environment) or 3 VMs with SSH
 - Git
 
-### 1. Клонування
+### 1. Clone
 
     git clone git@github.com:karinakliuchuk/elasticsearch-ansible.git
     cd elasticsearch-ansible
 
-### 2. Запуск тестових нод (Docker)
+### 2. Start test nodes (Docker)
 
-    docker run -d --name es-node1 --hostname es-node1 \
-      --privileged --cgroupns=host \
-      --memory=2g --memory-swap=2g \
-      -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
-      jrei/systemd-ubuntu:22.04
-
-    docker run -d --name es-node2 --hostname es-node2 \
-      --privileged --cgroupns=host \
-      --memory=2g --memory-swap=2g \
-      -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
-      jrei/systemd-ubuntu:22.04
-
-    docker run -d --name es-node3 --hostname es-node3 \
-      --privileged --cgroupns=host \
-      --memory=2g --memory-swap=2g \
-      -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
-      jrei/systemd-ubuntu:22.04
-
-Встановити Python у контейнерах (Ansible вимагає):
+    for i in 1 2 3; do
+      docker run -d --name es-node$i --hostname es-node$i \
+        --privileged --cgroupns=host \
+        --memory=2g --memory-swap=2g \
+        -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+        jrei/systemd-ubuntu:22.04
+    done
 
     for node in es-node1 es-node2 es-node3; do
       docker exec $node bash -c "apt update && apt install -y python3 python3-apt sudo curl"
     done
 
-### 3. Налаштування inventory
+### 3. Configure inventory
 
-Перевір IP контейнерів:
+Check container IPs:
 
     docker inspect -f '{{.Name}} -> {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' es-node1 es-node2 es-node3
 
-Онови inventory.ini відповідно.
+Update `inventory.ini` accordingly.
 
 ### 4. Vault password
 
     echo "your-vault-password" > .vault_pass
     chmod 600 .vault_pass
 
-### 5. Запуск
+### 5. Run
 
-    ansible all -m ping              # перевірка з'єднання
-    ansible-playbook site.yml        # повне розгортання
+    ansible all -m ping
+    ansible-playbook site.yml
 
-## Безпека
+## Security
 
-- CA і сертифікати генеруються через elasticsearch-certutil на першій ноді
-- SAN включає DNS (es-node1/2/3, localhost) і IP (172.17.0.2-4)
-- TLS увімкнений на:
-  - xpack.security.transport.ssl — трафік між нодами (порт 9300)
-  - xpack.security.http.ssl — клієнтський HTTPS (порт 9200)
-- Паролі зберігаються у group_vars/all/vault.yml (ansible-vault, AES256)
-- Пароль elastic встановлюється через bootstrap.password у ES keystore
+- CA and node certificates generated via `elasticsearch-certutil` on the first node
+- Certificate SAN includes DNS names (`es-node1/2/3`, `localhost`) and IPs (`172.17.0.2-4`)
+- TLS enabled for:
+  - `xpack.security.transport.ssl` - node-to-node traffic (port 9300)
+  - `xpack.security.http.ssl` - client HTTPS (port 9200)
+- Passwords stored in `group_vars/all/vault.yml` (ansible-vault, AES256)
+- `elastic` user password set via `bootstrap.password` in ES keystore
 
-## Перевірка
+## Verification
 
-### Health кластера
+### Cluster health
 
-    docker exec es-node1 curl -sk -u elastic:SuperSecretElastic2026 \
+    docker exec es-node1 curl -sk -u elastic:<your-password> \
       "https://localhost:9200/_cluster/health?pretty"
 
-Очікуваний результат:
+Expected:
 
     {
       "cluster_name" : "junior-devops-cluster",
@@ -136,47 +124,47 @@ Ansible-автоматизація для розгортання secure 3-node E
       "number_of_data_nodes" : 3
     }
 
-### Список нод
+### Node list
 
-    docker exec es-node1 curl -sk -u elastic:SuperSecretElastic2026 \
+    docker exec es-node1 curl -sk -u elastic:<your-password> \
       "https://localhost:9200/_cat/nodes?v"
 
-### Перевірка security
+### Security check
 
-    # Без пароля -> 401 Unauthorized
+    # Without password -> 401 Unauthorized
     docker exec es-node1 curl -sk "https://localhost:9200/_cluster/health"
 
-    # З паролем -> 200 OK
-    docker exec es-node1 curl -sk -u elastic:SuperSecretElastic2026 \
+    # With password -> 200 OK
+    docker exec es-node1 curl -sk -u elastic:<your-password> \
       "https://localhost:9200/_cluster/health"
 
-## Ідемпотентність
+## Idempotency
 
-Повторний запуск плейбука не змінює стан:
+Re-running the playbook does not change state:
 
     ansible-playbook site.yml
     # PLAY RECAP: changed=0 on all hosts
 
-## Технічні рішення
+## Design decisions
 
-- Розділення ролей — кожна роль відповідає за одну логічну область
-- Порядок у site.yml — common -> elasticsearch -> certificates -> security (серти генеруються після встановлення ES, бо потрібен elasticsearch-certutil)
-- certutil з SAN — використовуються прапорці --dns і --ip замість instances.yml, бо --in з кількома instance створює ZIP замість p12
-- bootstrap.password — офіційний механізм ES 8.x для встановлення пароля elastic при першому старті
-- Docker-connection — Ansible підключається до контейнерів через docker exec (без SSH), швидше і простіше для тестового
+- Roles split by responsibility (common / elasticsearch / certificates / security)
+- Order in `site.yml` matters: certificates are generated after ES install because `elasticsearch-certutil` is part of the ES package
+- `certutil` uses `--dns` and `--ip` flags instead of `instances.yml`, because `--in` with multiple instances produces a ZIP archive instead of a single p12
+- `bootstrap.password` is the official ES 8.x mechanism to set the initial elastic user password
+- Docker connection plugin used for the test environment (no SSH overhead)
 
-## Відомі обмеження
+## Known limitations
 
-- Пароль keystore — використовується порожній (--pass "") для простоти. У проді потрібен реальний пароль через elasticsearch-keystore add
-- IP контейнерів — Docker bridge видає IP динамічно, при перестворенні контейнерів треба оновлювати inventory.ini
-- apt_key і apt_repository — deprecated в ansible-core 2.21, будуть видалені у 2.25. Для прода треба перейти на deb822_repository
+- Keystore password is empty (`--pass ""`) for simplicity. In production use a real password via `elasticsearch-keystore add`
+- Container IPs are dynamic (Docker bridge). When containers are recreated, update `inventory.ini`
+- `apt_key` and `apt_repository` are deprecated in ansible-core 2.21 and will be removed in 2.25. Migration to `deb822_repository` is recommended for production
 
-## Стек
+## Stack
 
 - Ansible 2.21
 - Elasticsearch 8.13.4
-- Java 17 (OpenJDK)
+- OpenJDK 17
 - Ubuntu 22.04 (target)
-- Docker з systemd-образом (тестове середовище)
+- Docker with systemd-enabled image (test env)
 
 
