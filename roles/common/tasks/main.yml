@@ -1,0 +1,56 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install base packages
+  apt:
+    name:
+      - openjdk-17-jdk
+      - apt-transport-https
+      - gnupg
+      - curl
+      - python3-pip
+    state: present
+
+- name: Set vm.max_map_count for Elasticsearch
+  sysctl:
+    name: vm.max_map_count
+    value: "262144"
+    state: present
+    reload: yes
+    sysctl_file: /etc/sysctl.d/99-elasticsearch.conf
+
+- name: Set vm.swappiness
+  sysctl:
+    name: vm.swappiness
+    value: "1"
+    state: present
+    reload: yes
+    sysctl_file: /etc/sysctl.d/99-elasticsearch.conf
+
+- name: Disable swap immediately
+  command: swapoff -a
+  changed_when: false
+  when: ansible_swaptotal_mb > 0
+
+- name: Remove swap from /etc/fstab (persistent)
+  replace:
+    path: /etc/fstab
+    regexp: '^([^#].*\sswap\s.*)$'
+    replace: '# \1'
+
+- name: Set file descriptor limits
+  pam_limits:
+    domain: "*"
+    limit_type: "-"
+    limit_item: nofile
+    value: "65535"
+
+- name: Set memlock limit
+  pam_limits:
+    domain: "*"
+    limit_type: "-"
+    limit_item: memlock
+    value: "unlimited"
