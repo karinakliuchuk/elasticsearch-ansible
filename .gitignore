@@ -1,0 +1,26 @@
+# Ansible vault password — НІКОЛИ не комітити
+.vault_pass
+.vault_pass.txt
+
+# Ansible artifacts
+*.retry
+.ansible/
+ansible.log
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vagrant
+.vagrant/
