@@ -1,0 +1,81 @@
+---
+- name: Ensure certs directory exists
+  file:
+    path: "{{ es_certs_dir }}"
+    state: directory
+    owner: root
+    group: elasticsearch
+    mode: "0750"
+
+# Генерація CA і сертифікатів — тільки на першій ноді
+- block:
+    - name: Create instances.yml describing all ES nodes
+      copy:
+        dest: /tmp/instances.yml
+        content: |
+          instances:
+          {% for host in groups['es_nodes'] %}
+            - name: {{ host }}
+              ip:
+                - {{ hostvars[host].ansible_host }}
+          {% endfor %}
+
+    - name: Generate CA (elastic-stack-ca.p12)
+      command: >
+        /usr/share/elasticsearch/bin/elasticsearch-certutil ca
+        --silent
+        --out {{ es_certs_dir }}/elastic-stack-ca.p12
+        --pass ""
+      args:
+        creates: "{{ es_certs_dir }}/elastic-stack-ca.p12"
+
+    - name: Generate node certificates (elastic-certificates.p12)
+      command: >
+        /usr/share/elasticsearch/bin/elasticsearch-certutil cert
+        --silent
+        --ca {{ es_certs_dir }}/elastic-stack-ca.p12
+        --ca-pass ""
+        --in /tmp/instances.yml
+        --out {{ es_certs_dir }}/elastic-certificates.p12
+        --pass ""
+      args:
+        creates: "{{ es_certs_dir }}/elastic-certificates.p12"
+
+    - name: Set ownership on generated certs
+      file:
+        path: "{{ es_certs_dir }}/{{ item }}"
+        owner: root
+        group: elasticsearch
+        mode: "0640"
+      loop:
+        - elastic-stack-ca.p12
+        - elastic-certificates.p12
+
+    - name: Fetch certs to Ansible controller
+      fetch:
+        src: "{{ es_certs_dir }}/{{ item }}"
+        dest: /tmp/es-certs/
+        flat: yes
+      loop:
+        - elastic-stack-ca.p12
+        - elastic-certificates.p12
+
+    - name: Remove instances.yml (no secrets left)
+      file:
+        path: /tmp/instances.yml
+        state: absent
+  when: inventory_hostname == groups['es_nodes'][0]
+
+# Роздача сертифікатів на інші ноди
+
+- name: Distribute certs to non-first nodes
+  copy:
+    src: "/tmp/es-certs/{{ item }}"
+    dest: "{{ es_certs_dir }}/{{ item }}"
+    owner: root
+    group: elasticsearch
+    mode: "0640"
+  loop:
+    - elastic-stack-ca.p12
+    - elastic-certificates.p12
+  when: inventory_hostname != groups['es_nodes'][0]
