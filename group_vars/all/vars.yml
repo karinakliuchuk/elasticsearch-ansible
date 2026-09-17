@@ -11,7 +11,7 @@ es_logs_path: "/var/log/elasticsearch"
 es_certs_dir: "/etc/elasticsearch/certs"
 
 # Heap для JVM (для тестових VM 1g ок; правило — не більше 50% RAM)
-es_heap_size: "1g"
+es_heap_size: "512m"
 
 # HTTP порт
 es_http_port: 9200

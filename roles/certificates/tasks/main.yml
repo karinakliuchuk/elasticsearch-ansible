@@ -7,19 +7,10 @@
     group: elasticsearch
     mode: "0750"
 
-# Генерація CA і сертифікатів — тільки на першій ноді
+# ===============================================
+# Генерація CA і сертифіката — тільки на першій ноді
+# ===============================================
 - block:
-    - name: Create instances.yml describing all ES nodes
-      copy:
-        dest: /tmp/instances.yml
-        content: |
-          instances:
-          {% for host in groups['es_nodes'] %}
-            - name: {{ host }}
-              ip:
-                - {{ hostvars[host].ansible_host }}
-          {% endfor %}
-
     - name: Generate CA (elastic-stack-ca.p12)
       command: >
         /usr/share/elasticsearch/bin/elasticsearch-certutil ca
@@ -29,17 +20,38 @@
       args:
         creates: "{{ es_certs_dir }}/elastic-stack-ca.p12"
 
-    - name: Generate node certificates (elastic-certificates.p12)
+    - name: Generate single certificate with SANs via command-line flags
       command: >
         /usr/share/elasticsearch/bin/elasticsearch-certutil cert
         --silent
         --ca {{ es_certs_dir }}/elastic-stack-ca.p12
         --ca-pass ""
-        --in /tmp/instances.yml
         --out {{ es_certs_dir }}/elastic-certificates.p12
         --pass ""
+        --name instance
+        --dns localhost
+        {% for host in groups['es_nodes'] %}--dns {{ host }} {% endfor %}
+        {% for host in groups['es_nodes'] %}--ip {{ hostvars[host].es_ip }} {% endfor %}
       args:
         creates: "{{ es_certs_dir }}/elastic-certificates.p12"
+
+    - name: Verify certificate file is a valid PKCS12
+      command: >
+        /usr/share/elasticsearch/jdk/bin/keytool -list
+        -keystore {{ es_certs_dir }}/elastic-certificates.p12
+        -storepass "" -storetype PKCS12
+      register: cert_check
+      changed_when: false
+      failed_when: cert_check.rc != 0
+
+    - name: Verify certificate has SANs
+      command: >
+        /usr/share/elasticsearch/jdk/bin/keytool -list -v
+        -keystore {{ es_certs_dir }}/elastic-certificates.p12
+        -storepass "" -storetype PKCS12
+      register: cert_san_check
+      changed_when: false
+      failed_when: "'SubjectAlternativeName' not in cert_san_check.stdout"
 
     - name: Set ownership on generated certs
       file:
@@ -59,15 +71,11 @@
       loop:
         - elastic-stack-ca.p12
         - elastic-certificates.p12
-
-    - name: Remove instances.yml (no secrets left)
-      file:
-        path: /tmp/instances.yml
-        state: absent
   when: inventory_hostname == groups['es_nodes'][0]
 
+# ===============================================
 # Роздача сертифікатів на інші ноди
-
+# ===============================================
 - name: Distribute certs to non-first nodes
   copy:
     src: "/tmp/es-certs/{{ item }}"
