@@ -1,0 +1,62 @@
+---
+# Старт Elasticsearch на всіх нодах
+- name: Start Elasticsearch service
+  systemd:
+    name: elasticsearch
+    state: started
+    enabled: yes
+
+- name: Wait for Elasticsearch port to be open
+  wait_for:
+    host: "{{ ansible_host }}"
+    port: "{{ es_http_port }}"
+    delay: 5
+    timeout: 120
+
+# Встановлення паролів — тільки на першій ноді
+- name: Set built-in user passwords
+  block:
+    - name: Wait for Elasticsearch HTTP to be ready
+      uri:
+        url: "https://localhost:{{ es_http_port }}"
+        method: GET
+        validate_certs: no
+        status_code: 200
+      register: es_ready
+      until: es_ready.status == 200
+      retries: 30
+      delay: 5
+
+    - name: Run elasticsearch-setup-passwords
+      shell: |
+        echo "y" | /usr/share/elasticsearch/bin/elasticsearch-setup-passwords \
+          interactive \
+          --url https://localhost:{{ es_http_port }} \
+          --elastic-password "{{ es_elastic_password }}" \
+          --kibana-password "{{ es_kibana_password }}"
+      args:
+        creates: /etc/elasticsearch/.passwords_set
+      no_log: true
+
+    - name: Mark that passwords are already set
+      file:
+        path: /etc/elasticsearch/.passwords_set
+        state: touch
+        owner: root
+        group: root
+        mode: "0600"
+  when: inventory_hostname == groups['es_nodes'][0]
+
+# Перевірка кластера
+
+- name: Wait for cluster to be healthy
+  uri:
+    url: "https://{{ ansible_host }}:{{ es_http_port }}/_cluster/health?wait_for_status=yellow&timeout=60s"
+    method: GET
+    user: elastic
+    password: "{{ es_elastic_password }}"
+    validate_certs: no
+    status_code: 200
+  retries: 10
+  delay: 10
+  no_log: true

@@ -1,0 +1,26 @@
+---
+# Elasticsearch cluster deployment
+
+- name: Base OS setup for all ES nodes
+  hosts: es_nodes
+  become: true
+  roles:
+    - common
+
+- name: Install Elasticsearch on all nodes
+  hosts: es_nodes
+  become: true
+  roles:
+    - elasticsearch
+
+- name: Generate CA and certificates
+  hosts: es_nodes
+  become: true
+  roles:
+    - certificates
+
+- name: Start cluster and set up passwords
+  hosts: es_nodes
+  become: true
+  roles:
+    - security
