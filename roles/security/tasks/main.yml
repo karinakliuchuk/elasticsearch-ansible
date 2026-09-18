@@ -1,5 +1,4 @@
 ---
-# Запуск Elasticsearch
 - name: Ensure Elasticsearch is running
   systemd:
     name: elasticsearch
@@ -13,7 +12,6 @@
     delay: 5
     timeout: 120
 
-# Перевірка кластера
 - name: Verify cluster is healthy
   uri:
     url: "https://{{ es_ip }}:{{ es_http_port }}/_cluster/health?wait_for_status=yellow&timeout=60s"
