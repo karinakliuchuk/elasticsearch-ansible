@@ -26,3 +26,10 @@
   roles:
     - role: security
       tags: security
+
+- name: Configure ES administration
+  hosts: es_nodes
+  become: true
+  roles:
+    - role: es_admin
+      tags: es_admin

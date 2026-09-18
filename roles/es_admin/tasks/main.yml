@@ -1,0 +1,138 @@
+---
+- name: Wait for cluster to be ready
+  uri:
+    url: "https://{{ es_ip }}:{{ es_http_port }}/_cluster/health?wait_for_status=yellow&timeout=60s"
+    method: GET
+    user: elastic
+    password: "{{ es_elastic_password }}"
+    validate_certs: no
+    status_code: 200
+  retries: 15
+  delay: 10
+  run_once: true
+  no_log: true
+
+- name: Create application role
+  uri:
+    url: "https://{{ es_ip }}:{{ es_http_port }}/_security/role/app_writer"
+    method: PUT
+    user: elastic
+    password: "{{ es_elastic_password }}"
+    validate_certs: no
+    body_format: json
+    body:
+      cluster: ["monitor"]
+      indices:
+        - names: ["logs-*"]
+          privileges: ["write", "create_index", "read"]
+    status_code: [200, 201]
+  run_once: true
+  no_log: true
+
+- name: Create application user
+  uri:
+    url: "https://{{ es_ip }}:{{ es_http_port }}/_security/user/app_user"
+    method: POST
+    user: elastic
+    password: "{{ es_elastic_password }}"
+    validate_certs: no
+    body_format: json
+    body:
+      password: "{{ es_app_user_password }}"
+      roles: ["app_writer"]
+      full_name: "Application User"
+    status_code: [200, 201]
+  run_once: true
+  no_log: true
+
+- name: Create ILM policy for logs
+  uri:
+    url: "https://{{ es_ip }}:{{ es_http_port }}/_ilm/policy/logs_policy"
+    method: PUT
+    user: elastic
+    password: "{{ es_elastic_password }}"
+    validate_certs: no
+    body_format: json
+    body:
+      policy:
+        phases:
+          hot:
+            actions:
+              rollover:
+                max_size: "5gb"
+                max_age: "1d"
+          warm:
+            min_age: "7d"
+            actions:
+              allocate:
+                number_of_replicas: 1
+              forcemerge:
+                max_num_segments: 1
+          delete:
+            min_age: "30d"
+            actions:
+              delete: {}
+    status_code: [200, 201]
+  run_once: true
+  no_log: true
+
+- name: Create index template for logs
+  uri:
+    url: "https://{{ es_ip }}:{{ es_http_port }}/_index_template/logs_template"
+    method: PUT
+    user: elastic
+    password: "{{ es_elastic_password }}"
+    validate_certs: no
+    body_format: json
+    body:
+      index_patterns: ["logs-*"]
+      template:
+        settings:
+          number_of_shards: 1
+          number_of_replicas: 1
+          "index.lifecycle.name": "logs_policy"
+        mappings:
+          properties:
+            "@timestamp": { "type": "date" }
+            message: { "type": "text" }
+            level: { "type": "keyword" }
+            service: { "type": "keyword" }
+    status_code: [200, 201]
+  run_once: true
+  no_log: true
+
+- name: Ensure snapshot directory exists
+  file:
+    path: /mnt/backups
+    state: directory
+    owner: elasticsearch
+    group: elasticsearch
+    mode: "0750"
+
+- name: Configure snapshot repository
+  uri:
+    url: "https://{{ es_ip }}:{{ es_http_port }}/_snapshot/backup_repo"
+    method: PUT
+    user: elastic
+    password: "{{ es_elastic_password }}"
+    validate_certs: no
+    body_format: json
+    body:
+      type: fs
+      settings:
+        location: "/mnt/backups"
+        compress: true
+    status_code: [200, 201]
+  run_once: true
+  no_log: true
+
+- name: Create initial snapshot
+  uri:
+    url: "https://{{ es_ip }}:{{ es_http_port }}/_snapshot/backup_repo/snapshot_initial?wait_for_completion=true"
+    method: PUT
+    user: elastic
+    password: "{{ es_elastic_password }}"
+    validate_certs: no
+    status_code: [200, 201]
+  run_once: true
+  no_log: true

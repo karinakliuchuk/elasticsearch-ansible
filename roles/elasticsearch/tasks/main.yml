@@ -45,3 +45,26 @@
     name: elasticsearch
     enabled: yes
     daemon_reload: yes
+
+- name: Ensure bootstrap.password in ES keystore
+  shell: |
+    if ! /usr/share/elasticsearch/bin/elasticsearch-keystore list 2>/dev/null | grep -q '^bootstrap.password$'; then
+      echo "{{ es_elastic_password }}" | /usr/share/elasticsearch/bin/elasticsearch-keystore add -x bootstrap.password
+    fi
+  no_log: true
+
+- name: Remove ES auto-configuration secure_password entries
+  shell: |
+    /usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.http.ssl.keystore.secure_password 2>/dev/null || true
+    /usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.transport.ssl.keystore.secure_password 2>/dev/null || true
+    /usr/share/elasticsearch/bin/elasticsearch-keystore remove xpack.security.transport.ssl.truststore.secure_password 2>/dev/null || true
+  changed_when: false
+
+- name: Remove auto-generated ES certificate files
+  file:
+    path: "/etc/elasticsearch/certs/{{ item }}"
+    state: absent
+  loop:
+    - http.p12
+    - transport.p12
+    - http_ca.crt

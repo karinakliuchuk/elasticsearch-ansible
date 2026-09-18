@@ -23,3 +23,4 @@ es_cert_validity_days: 3650
 # Паролі — з vault (зашифровані). Поки що залишимо placeholder.
 es_elastic_password: "{{ vault_es_elastic_password }}"
 es_kibana_password: "{{ vault_es_kibana_password }}"
+es_app_user_password: "{{ vault_es_app_user_password }}"
