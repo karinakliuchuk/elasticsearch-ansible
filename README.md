@@ -69,12 +69,14 @@ Ansible playbook for deploying a secure 3-node Elasticsearch 8.x cluster with TL
 ### 2. Start test nodes (Docker)
 
     for i in 1 2 3; do
+      docker volume create es-data-$i
       docker run -d --name es-node$i --hostname es-node$i \
         --privileged --cgroupns=host \
         --memory=2g --memory-swap=2g \
+        -v es-data-$i:/var/lib/elasticsearch \
         -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
         jrei/systemd-ubuntu:22.04
-    done
+    done  
 
     for node in es-node1 es-node2 es-node3; do
       docker exec $node bash -c "apt update && apt install -y python3 python3-apt sudo curl"
